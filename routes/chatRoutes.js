@@ -1,7 +1,12 @@
 import express from 'express';
-import {generateChatResponse,getConversationHistory} from '../controllers/chatController.js';
+import {loginUser,createUser,generateChatResponse,getUsuario,getConversationHistory} from '../controllers/chatController.js';
 
 const router = express.Router();
+
+router.post('/login', loginUser);
+router.post('/usuarios', createUser);
+router.get('/usuarios', getUsuario);
+
 
 // Ruta para generar respuestas de ChatGPT
 router.post('/', generateChatResponse);

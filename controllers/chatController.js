@@ -1,8 +1,71 @@
 import OpenAI from 'openai';
+import Usuarios from '../models/Usuarios.js';
 import Conversation from '../models/Conversation.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
+
+/*Login*/
+
+export const loginUser = async (req, res) => {
+  const { correo, contrasena } = req.body;
+
+  try {
+      const validateUser = await Usuarios.findOne({ correo, contrasena });
+
+      if (validateUser) {
+          console.log("Login exitoso para:", correo);
+          return res.json({
+              success: true,
+              message: 'Inicio de Sesion Exitoso!',
+              user: {
+                  correo: validateUser.correo,
+                  nombre: validateUser.nombre,
+                  rol: validateUser.rol,
+              },
+          });
+      } else {
+          return res.status(400).json({ success: false, message: 'El usuario o contraseña no son correctos' });
+      }
+  } catch (error) {
+      console.error('Error:', error);
+      return res.status(500).json({ success: false, message: 'Error en el servidor' });
+  }
+};
+
+/*Crear usuario y admin*/
+export const createUser = async (req, res) => {
+  try {
+    const { nombre, correo, contrasena, rol } = req.body; 
+
+    const nuevoUsuario = new Usuarios({ 
+      nombre, 
+      correo, 
+      contrasena, 
+      rol
+    });
+
+    await nuevoUsuario.save();
+
+    res.status(201).json({ success: true, message: 'Usuario creado exitosamente', usuario: nuevoUsuario });
+  } catch (error) {
+    console.error('Error:', error);
+    res.status(500).json({ success: false, message: 'Error en el servidor' });
+  }
+};
+
+/*Obtener Datos del Usuario */
+
+export const getUsuario = async (req, res) => {
+  try {
+    const Usuarios = await Usuarios.find();
+    res.json(Usuarios);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener las ventas' });
+  }
+};
+
+////////////////////////////////////////
 
 // Configurar OpenAI con manejo de errores mejorado
 let openai;
