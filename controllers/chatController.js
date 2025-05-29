@@ -133,13 +133,20 @@ export const generateChatResponse = async (req, res) => {
   }
 };
 
-// Obtener historial de conversaciones
 export const getConversationHistory = async (req, res) => {
   try {
-    const conversations = await Conversation.find().sort({ createdAt: -1 }).limit(10);
+    const { userId } = req.params; // Recibe el userId desde la URL
+
+    if (!userId) {
+      return res.status(400).json({ error: 'El userId es requerido' });
+    }
+
+    const conversations = await Conversation.find({ userId }).sort({ createdAt: -1 }).limit(10);
     res.json(conversations);
   } catch (error) {
     console.error('Error al obtener el historial:', error);
     res.status(500).json({ error: 'Error al obtener el historial de conversaciones' });
   }
 };
+
+

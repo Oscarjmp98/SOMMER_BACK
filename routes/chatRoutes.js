@@ -12,6 +12,6 @@ router.get('/usuarios', getUsuario);
 router.post('/', generateChatResponse);
 
 // Ruta para obtener el historial de conversaciones
-router.get('/history', getConversationHistory);
+router.get('/history/:userId', getConversationHistory);
 
 export { router };
