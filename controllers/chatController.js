@@ -83,7 +83,7 @@ try {
 // Generar respuesta de ChatGPT con contexto del historial de conversaciones
 export const generateChatResponse = async (req, res) => {
   try {
-    const { prompt } = req.body;
+    const { prompt, userId } = req.body;
     if (!prompt) {
       return res.status(400).json({ error: 'El prompt es requerido' });
     }
@@ -120,7 +120,7 @@ export const generateChatResponse = async (req, res) => {
     const response = completion.choices[0].message.content;
     
     // Guardar la conversación en la base de datos
-    const newConversation = new Conversation({ prompt, response });
+    const newConversation = new Conversation({ prompt, response,userId });
     await newConversation.save();
     
     res.json({ response });
