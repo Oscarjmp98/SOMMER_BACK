@@ -142,17 +142,26 @@ export const generateChatResponse = async (req, res) => {
 
 export const getConversationHistory = async (req, res) => {
   try {
-    const { userId } = req.params; // Recibe el userId desde la URL
+    const { userId } = req.params;
 
     if (!userId) {
-      return res.status(400).json({ error: 'El userId es requerido' });
+      console.error("Error: userId no fue proporcionado en la solicitud");
+      return res.status(400).json({ error: "El userId es requerido" });
     }
 
+    // Obtener las últimas 10 conversaciones
     const conversations = await Conversation.find({ userId }).sort({ createdAt: -1 }).limit(10);
-    res.json(conversations);
+
+    // Transformar los datos para devolver solo el prompt y un resumen
+    const conversationSummary = conversations.map(conv => ({
+      prompt: conv.prompt,
+      resumen: conv.response.slice(0, 100) + "..." // Limita la respuesta a 100 caracteres y añade "..."
+    }));
+
+    res.json(conversationSummary);
   } catch (error) {
-    console.error('Error al obtener el historial:', error);
-    res.status(500).json({ error: 'Error al obtener el historial de conversaciones' });
+    console.error("Error al obtener el historial:", error);
+    res.status(500).json({ error: "Error al obtener el historial de conversaciones" });
   }
 };
 
