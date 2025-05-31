@@ -162,17 +162,6 @@ export const getConversationHistory = async (req, res) => {
   }
 };
 
-// export const logoutUser = (req, res) => {
-//   const { userId } = req.body;
-
-//   if (userActivityMap.has(userId)) {
-//     userActivityMap.delete(userId);
-//     console.log(`👋 Usuario ${userId} cerró sesión manualmente`);
-//   }
-
-//   res.json({ success: true, message: 'Sesión cerrada correctamente' });
-// };
-
 export const logoutUser = async (req, res) => {
   try {
     const { userId } = req.body;
@@ -224,7 +213,8 @@ export const generateAndSendSummary = async (userId, PORT) => {
       `🗨️ ${conv.prompt}\n💬 ${conv.response}`
     ).join('\n\n') || 'No hubo conversación registrada hoy.';
 
-    const { data: users } = await axios.get(`http://localhost:${PORT}/api/chat/usuarios`);
+    const { data: users } = await axios.get(`https://sommer-back-steel.vercel.app/api/chat/usuarios`);
+    //const { data: users } = await axios.get(`http://localhost:${PORT}/api/chat/usuarios`);
     const user = users.find(u =>
       u._id === userId || u._id?.toString() === userId || u.correo === userId
     );
@@ -253,6 +243,3 @@ export const sendSummaryEmail = async (to, resumen) => {
     throw error; // Propaga el error para manejarlo arriba
   }
 };
-
-// Luego llama a la función pasando el transporter
-//await sendSummaryEmail(user.correo, resumen, transporter);
