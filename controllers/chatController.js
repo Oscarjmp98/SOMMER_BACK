@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 import Usuarios from '../models/Usuarios.js';
 import Conversation from '../models/Conversation.js';
-import nodemailer from 'nodemailer';
+import transporter from '../config/mailConfig.js'; 
 import axios from 'axios';
 import dotenv from 'dotenv';
 
@@ -162,92 +162,97 @@ export const getConversationHistory = async (req, res) => {
   }
 };
 
-export const logoutUser = (req, res) => {
-  const { userId } = req.body;
+// export const logoutUser = (req, res) => {
+//   const { userId } = req.body;
 
-  if (userActivityMap.has(userId)) {
-    userActivityMap.delete(userId);
-    console.log(`👋 Usuario ${userId} cerró sesión manualmente`);
-  }
+//   if (userActivityMap.has(userId)) {
+//     userActivityMap.delete(userId);
+//     console.log(`👋 Usuario ${userId} cerró sesión manualmente`);
+//   }
 
-  res.json({ success: true, message: 'Sesión cerrada correctamente' });
-};
+//   res.json({ success: true, message: 'Sesión cerrada correctamente' });
+// };
 
-//////////////////////////////////////////////////////////////////////////////         VALIDAR                 //////////////////////////////////////////////////////////////////////////
+export const logoutUser = async (req, res) => {
+  try {
+    const { userId } = req.body;
 
-// Transportador SMTP para Zoho Mail
-export const transporter = nodemailer.createTransport({
-  host: process.env.MAIL_HOST,
-  port: parseInt(process.env.MAIL_PORT || '465'),
-  secure: process.env.MAIL_SECURE === 'true',
-  auth: {
-    user: process.env.MAIL_USER,
-    pass: process.env.MAIL_PASS
-  }
-});
-
-// Verificación SMTP de Sommer una vez al inicio
-export const verifySMTPConnection = () => {
-  transporter.verify((error, success) => {
-    if (error) {
-      console.error('❌ Error de configuración SMTP:', error);
+    if (userActivityMap.has(userId)) {
+      userActivityMap.delete(userId);
+      console.log(`👋 Usuario ${userId} cerró sesión manualmente`);
+      
+      // Enviar resumen reutilizando la función existente
+      const summarySent = await generateAndSendSummary(userId, process.env.PORT);
+      
+      return res.json({ 
+        success: true, 
+        message: summarySent 
+          ? 'Sesión cerrada y resumen enviado por correo' 
+          : 'Sesión cerrada (pero no se pudo enviar el resumen)' 
+      });
     } else {
-      console.log('✅ Conexión SMTP con Zoho lista para enviar correos');
+      return res.json({ 
+        success: true, 
+        message: 'Sesión cerrada (usuario no tenía actividad registrada)' 
+      });
     }
-  });
+  } catch (error) {
+    console.error('❌ Error durante el cierre de sesión:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Error al cerrar sesión' 
+    });
+  }
 };
 
 // Revisión de inactividad cada 1 minuto
-export const startInactivityCheck = (PORT) => {
-  setInterval(async () => {
-    const now = Date.now();
+export const generateAndSendSummary = async (userId, PORT) => {
+  try {
+    console.log(`⏳ Generando resumen para usuario ${userId}...`);
+    
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
 
-    for (const [userId, lastActivity] of userActivityMap.entries()) {
-      if (now - lastActivity > 1 * 60 * 1000) {
-        console.log(`⏳ Inactividad detectada para usuario ${userId}. Enviando resumen...`);
-        userActivityMap.delete(userId);
+    const conversations = await Conversation.find({
+      userId,
+      createdAt: { $gte: startOfDay, $lte: endOfDay }
+    });
 
-        const startOfDay = new Date();
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date();
-        endOfDay.setHours(23, 59, 59, 999);
+    const resumen = conversations.map(conv =>
+      `🗨️ ${conv.prompt}\n💬 ${conv.response}`
+    ).join('\n\n') || 'No hubo conversación registrada hoy.';
 
-        const conversations = await Conversation.find({
-          userId,
-          createdAt: { $gte: startOfDay, $lte: endOfDay }
-        });
+    const { data: users } = await axios.get(`http://localhost:${PORT}/api/chat/usuarios`);
+    const user = users.find(u =>
+      u._id === userId || u._id?.toString() === userId || u.correo === userId
+    );
 
-        const resumen = conversations.map(conv =>
-          `🗨️ ${conv.prompt}\n💬 ${conv.response}`
-        ).join('\n\n') || 'No hubo conversación registrada hoy.';
-
-        try {
-          const { data: users } = await axios.get(`http://localhost:${PORT}/api/chat/usuarios`);
-          const user = users.find(u =>
-            u._id === userId || u._id?.toString() === userId || u.correo === userId
-          );
-
-          if (user && user.correo) {
-            await sendSummaryEmail(user.correo, resumen);
-          } else {
-            console.warn(`⚠️ No se encontró el correo para el usuario ${userId}`);
-          }
-        } catch (error) {
-          console.error('❌ Error obteniendo usuarios o enviando correo:', error);
-        }
-      }
+    if (user && user.correo) {
+      await sendSummaryEmail(user.correo, resumen); // Ahora sin pasar transporter
+      return true;
     }
-  }, 60 * 1000); // cada minuto
+  } catch (error) {
+    console.error('❌ Error generando o enviando resumen:', error);
+    return false;
+  }
 };
 
-// Función para enviar el resumen por correo
 export const sendSummaryEmail = async (to, resumen) => {
-  await transporter.sendMail({
-    from: `"Asistente Sommer" <${process.env.MAIL_USER}>`,
-    to,
-    subject: 'Resumen de tu conversación con Sommer',
-    text: resumen
-  });
-
-  console.log(`📧 Resumen enviado a ${to}`);
+  try {
+    await transporter.sendMail({
+      from: `"Asistente Sommer" <${process.env.MAIL_USER}>`,
+      to,
+      subject: 'Resumen de tu conversación con Sommer',
+      text: resumen
+    });
+    console.log(`📧 Resumen enviado a ${to}`);
+  } catch (error) {
+    console.error('❌ Error enviando correo:', error);
+    throw error; // Propaga el error para manejarlo arriba
+  }
 };
+
+// Luego llama a la función pasando el transporter
+//await sendSummaryEmail(user.correo, resumen, transporter);
