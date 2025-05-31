@@ -3,12 +3,9 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import { router as chatRoutes } from './routes/chatRoutes.js';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import nodemailer from 'nodemailer';
-import axios from 'axios';
-import Conversation from './models/Conversation.js';
+
 
 // Cargar variables de entorno
 dotenv.config();

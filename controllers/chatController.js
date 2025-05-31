@@ -1,12 +1,19 @@
 import OpenAI from 'openai';
 import Usuarios from '../models/Usuarios.js';
 import Conversation from '../models/Conversation.js';
-import { updateUserActivity } from '../server.js';
-import { userActivityMap } from '../server.js'; // NUEVO 
-
+import nodemailer from 'nodemailer';
+import axios from 'axios';
 import dotenv from 'dotenv';
 
 dotenv.config();
+
+// Mapa de actividad global (se mantendrá entre invocaciones en Vercel)
+const userActivityMap = new Map();
+
+export function updateUserActivity(userId) {
+  userActivityMap.set(userId, Date.now());
+}
+
 
 /*Login*/
 
@@ -91,18 +98,8 @@ export const generateChatResponse = async (req, res) => {
     const { prompt, userId } = req.body;
     updateUserActivity(userId);
 
-    if (!prompt) {
-      return res.status(400).json({ error: 'El prompt es requerido' });
-    }
+    if (!prompt) return res.status(400).json({ error: 'El prompt es requerido' });
     
-    if (!openai) {
-      return res.status(500).json({ 
-        error: 'No se ha configurado correctamente la API de OpenAI',
-        message: 'Error interno del servidor al configurar OpenAI'
-      });
-    }
-    
-    // Obtener el historial de conversaciones recientes
     const conversations = await Conversation.find().sort({ createdAt: -1 }).limit(10);
     const conversationContext = conversations.flatMap(conv => ([
       { role: "user", content: conv.prompt },
@@ -176,15 +173,6 @@ export const logoutUser = (req, res) => {
   res.json({ success: true, message: 'Sesión cerrada correctamente' });
 };
 
-
-/* ---------------- INACTIVIDAD Y ENVÍO DE CORREO ---------------- */
-
-// Mapa global de actividad
-export const userActivityMap = new Map();
-
-export function updateUserActivity(userId) {
-  userActivityMap.set(userId, Date.now());
-}
 
 // Transportador SMTP para Zoho Mail
 const transporter = nodemailer.createTransport({
