@@ -38,7 +38,7 @@ app.use('/api/chat', chatRoutes);
 // Ruta raíz
 app.get('/', (req, res) => {
   res.json({
-    message: 'API de ChatGPT funcionando correctamente',
+    message: 'API de SOMMER funcionando correctamente',
     status: 'OpenAI configurado'
   });
 });
