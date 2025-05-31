@@ -1,45 +1,54 @@
 import OpenAI from 'openai';
-import dotenv from 'dotenv';
 import Usuarios from '../models/Usuarios.js';
 import Conversation from '../models/Conversation.js';
-import { updateUserActivity, userActivityMap, transporter } from '../api/server.js';
+import { updateUserActivity } from '../server.js';
+import { userActivityMap } from '../server.js'; // NUEVO 
+
+import dotenv from 'dotenv';
 
 dotenv.config();
 
-/* ---------------- LOGIN ---------------- */
+/*Login*/
+
 export const loginUser = async (req, res) => {
   const { correo, contrasena } = req.body;
 
   try {
-    const validateUser = await Usuarios.findOne({ correo, contrasena });
+      const validateUser = await Usuarios.findOne({ correo, contrasena });
 
-    if (validateUser) {
-      console.log("Login exitoso para:", correo);
-      return res.json({
-        success: true,
-        message: 'Inicio de Sesion Exitoso!',
-        user: {
-          _id: validateUser._id,
-          correo: validateUser.correo,
-          nombre: validateUser.nombre,
-          rol: validateUser.rol,
-        },
-      });
-    } else {
-      return res.status(400).json({ success: false, message: 'El usuario o contraseña no son correctos' });
-    }
+      if (validateUser) {
+          console.log("Login exitoso para:", correo);
+          return res.json({
+              success: true,
+              message: 'Inicio de Sesion Exitoso!',
+              user: {
+                  _id: validateUser._id,  //Se agrega User _id.  
+                  correo: validateUser.correo,
+                  nombre: validateUser.nombre,
+                  rol: validateUser.rol,
+              },
+          });
+      } else {
+          return res.status(400).json({ success: false, message: 'El usuario o contraseña no son correctos' });
+      }
   } catch (error) {
-    console.error('Error:', error);
-    return res.status(500).json({ success: false, message: 'Error en el servidor' });
+      console.error('Error:', error);
+      return res.status(500).json({ success: false, message: 'Error en el servidor' });
   }
 };
 
-/* ---------------- REGISTRO ---------------- */
+/*Crear usuario y admin*/
 export const createUser = async (req, res) => {
   try {
-    const { nombre, correo, contrasena, rol } = req.body;
+    const { nombre, correo, contrasena, rol } = req.body; 
 
-    const nuevoUsuario = new Usuarios({ nombre, correo, contrasena, rol });
+    const nuevoUsuario = new Usuarios({ 
+      nombre, 
+      correo, 
+      contrasena, 
+      rol
+    });
+
     await nuevoUsuario.save();
 
     res.status(201).json({ success: true, message: 'Usuario creado exitosamente', usuario: nuevoUsuario });
@@ -49,79 +58,104 @@ export const createUser = async (req, res) => {
   }
 };
 
-/* ---------------- OBTENER USUARIOS ---------------- */
+/*Obtener Datos del Usuario */                                                //MODIFICADO
+
 export const getUsuario = async (req, res) => {
   try {
-    const usuarios = await Usuarios.find();
-    res.json(usuarios);
+    const usuarios = await Usuarios.find(); // ⬅ nombre en minúsculas
+    res.json(usuarios); // ✅ así sí devuelve un arreglo directamente
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener los usuarios' });
   }
 };
 
-/* ---------------- CONFIGURAR OPENAI ---------------- */
+
+////////////////////////////////////////
+
+// Configurar OpenAI con manejo de errores mejorado
 let openai;
 try {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error('La variable de entorno OPENAI_API_KEY no está definida');
+  if (!apiKey) {
+    throw new Error('La variable de entorno OPENAI_API_KEY no está definida');
+  }
   openai = new OpenAI({ apiKey });
   console.log('✅ OpenAI configurado correctamente');
 } catch (error) {
   console.error('Error al inicializar OpenAI:', error);
 }
 
-/* ---------------- CHAT SOMMER ---------------- */
+// Generar respuesta de ChatGPT con contexto del historial de conversaciones
 export const generateChatResponse = async (req, res) => {
   try {
     const { prompt, userId } = req.body;
     updateUserActivity(userId);
 
-    if (!prompt) return res.status(400).json({ error: 'El prompt es requerido' });
-    if (!openai) return res.status(500).json({ error: 'OpenAI no está configurado' });
-
+    if (!prompt) {
+      return res.status(400).json({ error: 'El prompt es requerido' });
+    }
+    
+    if (!openai) {
+      return res.status(500).json({ 
+        error: 'No se ha configurado correctamente la API de OpenAI',
+        message: 'Error interno del servidor al configurar OpenAI'
+      });
+    }
+    
+    // Obtener el historial de conversaciones recientes
     const conversations = await Conversation.find().sort({ createdAt: -1 }).limit(10);
     const conversationContext = conversations.flatMap(conv => ([
       { role: "user", content: conv.prompt },
       { role: "assistant", content: conv.response }
     ]));
 
+    // Llamada a la API de OpenAI con historial de conversaciones como contexto
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        {
-          role: "system",
-          content: "Eres una asistente de rumbas llamada Sommer, de 32 años, servicial, alegre, espontánea y carismática, con acento caleño y lenguaje juvenil. Solo recomiendas planes de rumba en Cali para amigos. No hablas de comida, religión, estudios ni temas médicos."
+        { 
+          role: "system", 
+          content: "Eres una asistente de rumbas llamada “Sommer”, de 32 años de edad. Eres servicial, alegre, espontánea, carismática con un acento caleño y lenguaje juvenil. Los usuarios te preguntaran que hacer un viernes o los fines de semana en la noche en Cali. Quieren planes para salir con amigos. Sugerir 3 planes divertidos de rumba con amigos cuando te pregunten. Responder brevemente y directo, entusiasmada, informalidad moderada, sin groserías, segura de si y con tranquilidad. No puedes hablar mal de otros lugares, no puedes buscar comida, cosas para comprar, temas de estudio, bíblicos, terroristas,  no des concejos médicos ni opiniones personales. "
         },
-        ...conversationContext,
+        ...conversationContext, // Agregar historial de conversaciones
         { role: "user", content: prompt }
       ],
       max_tokens: 500,
       temperature: 0.7,
     });
-
+    
     const response = completion.choices[0].message.content;
-    const newConversation = new Conversation({ prompt, response, userId });
+    
+    // Guardar la conversación en la base de datos
+    const newConversation = new Conversation({ prompt, response,userId });
     await newConversation.save();
-
+    
     res.json({ response });
   } catch (error) {
     console.error('Error al generar la respuesta:', error);
-    res.status(500).json({ error: 'Error al procesar la solicitud', details: error.message });
+    res.status(500).json({ 
+      error: 'Error al procesar la solicitud',
+      details: error.message 
+    });
   }
 };
 
-/* ---------------- HISTORIAL DE CHAT ---------------- */
 export const getConversationHistory = async (req, res) => {
   try {
     const { userId } = req.params;
 
-    if (!userId) return res.status(400).json({ error: "El userId es requerido" });
+    if (!userId) {
+      console.error("Error: userId no fue proporcionado en la solicitud");
+      return res.status(400).json({ error: "El userId es requerido" });
+    }
 
+    // Obtener las últimas 10 conversaciones
     const conversations = await Conversation.find({ userId }).sort({ createdAt: -1 }).limit(10);
 
+    // Transformar los datos para devolver solo el prompt y un resumen
     const conversationSummary = conversations.map(conv => ({
       prompt: conv.prompt,
-      resumen: conv.response.slice(0, 100) + "..."
+      resumen: conv.response.slice(0, 100) + "..." // Limita la respuesta a 100 caracteres y añade "..."
     }));
 
     res.json(conversationSummary);
@@ -131,46 +165,98 @@ export const getConversationHistory = async (req, res) => {
   }
 };
 
-/* ---------------- LOGOUT + ENVÍO DE CORREO ---------------- */
-export const logoutUser = async (req, res) => {
+export const logoutUser = (req, res) => {
   const { userId } = req.body;
 
-  try {
-    if (userActivityMap.has(userId)) {
-      userActivityMap.delete(userId);
-    }
-
-    const user = await Usuarios.findById(userId);
-    if (!user || !user.correo) {
-      return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
-    }
-
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
-
-    const conversations = await Conversation.find({
-      userId,
-      createdAt: { $gte: startOfDay, $lte: endOfDay }
-    });
-
-    const resumen = conversations.map(conv =>
-      `🗨️ ${conv.prompt}\n💬 ${conv.response}`
-    ).join('\n\n') || 'No hubo conversación registrada hoy.';
-
-    await transporter.sendMail({
-      from: `"Sommer" <${process.env.MAIL_USER}>`,
-      to: user.correo,
-      subject: 'Resumen de tu conversación con Sommer',
-      text: resumen
-    });
-
-    console.log(`📧 Correo enviado a ${user.correo}`);
-    res.json({ success: true, message: 'Sesión cerrada y resumen enviado' });
-
-  } catch (error) {
-    console.error('❌ Error al cerrar sesión:', error);
-    res.status(500).json({ success: false, message: 'Error al cerrar sesión' });
+  if (userActivityMap.has(userId)) {
+    userActivityMap.delete(userId);
+    console.log(`👋 Usuario ${userId} cerró sesión manualmente`);
   }
+
+  res.json({ success: true, message: 'Sesión cerrada correctamente' });
 };
+
+
+/* ---------------- INACTIVIDAD Y ENVÍO DE CORREO ---------------- */
+
+// Mapa global de actividad
+export const userActivityMap = new Map();
+
+export function updateUserActivity(userId) {
+  userActivityMap.set(userId, Date.now());
+}
+
+// Transportador SMTP para Zoho Mail
+const transporter = nodemailer.createTransport({
+  host: process.env.MAIL_HOST,
+  port: parseInt(process.env.MAIL_PORT || '465'),
+  secure: process.env.MAIL_SECURE === 'true',
+  auth: {
+    user: process.env.MAIL_USER,
+    pass: process.env.MAIL_PASS
+  }
+});
+
+// Verificación SMTP de Sommer una vez al inicio
+transporter.verify((error, success) => {
+  if (error) {
+    console.error('❌ Error de configuración SMTP:', error);
+  } else {
+    console.log('✅ Conexión SMTP con Zoho lista para enviar correos');
+  }
+});
+
+// Revisión de inactividad cada 1 minuto
+setInterval(async () => {
+  const now = Date.now();
+
+  for (const [userId, lastActivity] of userActivityMap.entries()) {
+    if (now - lastActivity > 1 * 60 * 1000) {
+      console.log(`⏳ Inactividad detectada para usuario ${userId}. Enviando resumen...`);
+      userActivityMap.delete(userId);
+
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date();
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const conversations = await Conversation.find({
+        userId,
+        createdAt: { $gte: startOfDay, $lte: endOfDay }
+      });
+
+      const resumen = conversations.map(conv =>
+        `🗨️ ${conv.prompt}\n💬 ${conv.response}`
+      ).join('\n\n') || 'No hubo conversación registrada hoy.';
+
+      try {
+        const { data: users } = await axios.get(`http://localhost:${PORT}/api/chat/usuarios`);
+        const user = users.find(u =>
+          u._id === userId || u._id?.toString() === userId || u.correo === userId
+        );
+
+        if (user && user.correo) {
+          await sendSummaryEmail(user.correo, resumen);
+        } else {
+          console.warn(`⚠️ No se encontró el correo para el usuario ${userId}`);
+        }
+      } catch (error) {
+        console.error('❌ Error obteniendo usuarios o enviando correo:', error);
+      }
+    }
+  }
+}, 60 * 1000); // cada minuto
+
+// Función para enviar el resumen por correo
+async function sendSummaryEmail(to, resumen) {
+  await transporter.sendMail({
+    from: `"Asistente Sommer" <${process.env.MAIL_USER}>`,
+    to,
+    subject: 'Resumen de tu conversación con Sommer',
+    text: resumen
+  });
+
+  console.log(`📧 Resumen enviado a ${to}`);
+}
+
+
