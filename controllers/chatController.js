@@ -1,6 +1,9 @@
 import OpenAI from 'openai';
 import Usuarios from '../models/Usuarios.js';
 import Conversation from '../models/Conversation.js';
+import { updateUserActivity } from '../server.js';
+import { userActivityMap } from '../server.js'; // NUEVO 
+
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -19,6 +22,7 @@ export const loginUser = async (req, res) => {
               success: true,
               message: 'Inicio de Sesion Exitoso!',
               user: {
+                  _id: validateUser._id,  //Se agrega User _id.  
                   correo: validateUser.correo,
                   nombre: validateUser.nombre,
                   rol: validateUser.rol,
@@ -54,16 +58,17 @@ export const createUser = async (req, res) => {
   }
 };
 
-/*Obtener Datos del Usuario */
+/*Obtener Datos del Usuario */                                                //MODIFICADO
 
 export const getUsuario = async (req, res) => {
   try {
-    const Usuarios = await Usuarios.find();
-    res.json(Usuarios);
+    const usuarios = await Usuarios.find(); // ⬅ nombre en minúsculas
+    res.json(usuarios); // ✅ así sí devuelve un arreglo directamente
   } catch (error) {
-    res.status(500).json({ error: 'Error al obtener las ventas' });
+    res.status(500).json({ error: 'Error al obtener los usuarios' });
   }
 };
+
 
 ////////////////////////////////////////
 
@@ -84,6 +89,8 @@ try {
 export const generateChatResponse = async (req, res) => {
   try {
     const { prompt, userId } = req.body;
+    updateUserActivity(userId);
+
     if (!prompt) {
       return res.status(400).json({ error: 'El prompt es requerido' });
     }
@@ -147,6 +154,17 @@ export const getConversationHistory = async (req, res) => {
     console.error('Error al obtener el historial:', error);
     res.status(500).json({ error: 'Error al obtener el historial de conversaciones' });
   }
+};
+
+export const logoutUser = (req, res) => {
+  const { userId } = req.body;
+
+  if (userActivityMap.has(userId)) {
+    userActivityMap.delete(userId);
+    console.log(`👋 Usuario ${userId} cerró sesión manualmente`);
+  }
+
+  res.json({ success: true, message: 'Sesión cerrada correctamente' });
 };
 
 
